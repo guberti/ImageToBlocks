@@ -1,0 +1,1 @@
+If you want to use this software with your own texture pack, you will need to include every texture you want to build with in this directory. When I used it, this directory was populated with the default textures, but due to copyright reasons I can't upload that to Github.
