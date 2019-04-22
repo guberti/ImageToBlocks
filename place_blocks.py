@@ -3,17 +3,20 @@ from PIL import Image
 from blockmodel import BlockModel
 import keyboard, mouse, pause
 import sys, time, json, datetime, os
+import pyaudio, struct, math
 
 # Arguments
-IMAGE_PATH = "floor_centered.png"
+#IMAGE_PATH = "bear.png"
+IMAGE_PATH = "protoTech_floor_v2_full.png"
+#IMAGE_PATH = "nameplate.png"
 MINOR_DELAY = 0.25
 MAJOR_DELAY = MINOR_DELAY * 2
-DELAY_BETWEEN_BLOCKS = 2.0 # Seconds
-DELAY_BETWEEN_ROWS = 2.0 # Seconds
+DELAY_BETWEEN_BLOCKS = 3.0 # Seconds
 BLOCK_WIDTH = 16
-GENERATE_FULL_PREVIEW = False
-GENREATE_SCHEMATIC = True
+GENERATE_FULL_PREVIEW = True
+GENREATE_SCHEMATIC = False
 DO_KEYPRESSES = True
+CALIBRATE_DISTANCE = 64
 
 IMAGE_DIRECTORY = IMAGE_PATH.split(".")[0] + "/"
 PREV_PROGRESS_PATH = IMAGE_DIRECTORY + "save_progress.json"
@@ -27,6 +30,34 @@ with open('block_ids.json') as color_data:
 
 with open('mouse_positions.json') as color_data:    
     MOUSE_POSITIONS = json.load(color_data)
+
+# AUDIO DETECTION
+
+CHUNK = 1024
+FORMAT = pyaudio.paInt16
+CHANNELS = 1
+RATE = 44100
+VOLUME_CUTOFF = 0.1
+TIME_TO_LISTEN = 5
+
+p = pyaudio.PyAudio()
+
+stream = p.open(format=pyaudio.paInt16,
+                channels=CHANNELS,
+                rate=RATE,
+                input=True,
+                input_device_index=2,
+                frames_per_buffer=CHUNK)
+
+def rms(data):
+    count = len(data)/2
+    format = "%dh"%(count)
+    shorts = struct.unpack( format, data )
+    sum_squares = 0.0
+    for sample in shorts:
+        n = sample * (1.0/32768)
+        sum_squares += n*n
+    return math.sqrt( sum_squares / count )
 
 def get_closest(rgb):
     best_color_index = -1
@@ -80,6 +111,26 @@ def switch_to_hotbar(invpos, hotbar): # 0-35
     keyboard.press_and_release("e") # Close inventory
     time.sleep(MAJOR_DELAY)
 
+def right_click():
+    counts = 0
+    while True:
+        mouse.right_click()
+        time.sleep(0.20)
+        mouse.right_click()
+        time.sleep(0.20)
+        mouse.right_click()
+        break
+        '''for i in range(0, int(RATE / CHUNK * TIME_TO_LISTEN)):
+            vol = rms(stream.read(CHUNK))
+            #print vol
+            if vol > VOLUME_CUTOFF:
+                return
+        print "Did not hear note block!"
+        print "Placing block again"
+        counts += 1
+        print "This has happened " + str(counts) + " times this block"'''
+
+
 im = Image.open(IMAGE_PATH)
 pix = im.load()
 
@@ -87,11 +138,6 @@ if GENERATE_FULL_PREVIEW:
     complete_preview = Image.new('RGB', (im.size[0] * 16, im.size[1] * 16))
     preview_pix = complete_preview.load()
     compl_prev_index = 0
-
-def add_bitmap_to_coml_prev(bmp):
-    i = int(compl_prev_index / im.size[1])
-    k = compl_prev_index % im.size[1]
-    complete_preview.paste(bmp, (i*BLOCK_WIDTH, k*BLOCK_WIDTH))
 
 if GENREATE_SCHEMATIC:
     schematic_source = []
@@ -102,17 +148,20 @@ print "Dimensions (w, h): " + str(im.size)
 SLOT_ASSIGNMENTS = []
 SLOT_COUNTS = []
 
+#if len(pix[0,0])
+
 for i in range(0, im.size[0]):
     for k in range(0, im.size[1]):
+        #print pix[i,k]
 
         best_color_index = get_closest(pix[i,k])
 
         # Edit and export the image
         pix[i,k] = tuple(COLORS[best_color_index][1])
 
-        #if GENERATE_FULL_PREVIEW:
-        #    block_pix = Image.open('textures/' + COLORS[best_color_index][0] + '.png', 'r')
-        #    complete_preview.paste(block_pix, (i*BLOCK_WIDTH, k*BLOCK_WIDTH))
+        if GENERATE_FULL_PREVIEW:
+            block_pix = Image.open('textures/' + COLORS[best_color_index][0] + '.png', 'r')
+            complete_preview.paste(block_pix, (i*BLOCK_WIDTH, k*BLOCK_WIDTH))
 
         if GENREATE_SCHEMATIC:
             id_meta = get_block_id_meta(COLORS[best_color_index][0])
@@ -125,7 +174,7 @@ for i in range(0, im.size[0]):
             continue
 
         # If we have nine colors and need another, stop running
-        if len(SLOT_ASSIGNMENTS) > 36:
+        if len(SLOT_ASSIGNMENTS) > 360:
             print "We need " + COLORS[best_color_index][0] + \
             " but we're out of slots!"
             print "Aborting program..."
@@ -155,11 +204,11 @@ outpath = IMAGE_DIRECTORY + "preview." + IMAGE_PATH.split(".")[1]
 im.save(outpath)
 print "Preview exported as '" + outpath + "'"
 
-#if GENERATE_FULL_PREVIEW:
-#    complete_outpath = IMAGE_DIRECTORY + \
-#        "complete." + IMAGE_PATH.split(".")[1]
-#    complete_preview.save(complete_outpath)
-#    print "Detailed preview exported as '" + complete_outpath + "'"
+if GENERATE_FULL_PREVIEW:
+    complete_outpath = IMAGE_DIRECTORY + \
+        "complete." + IMAGE_PATH.split(".")[1]
+    complete_preview.save(complete_outpath)
+    print "Detailed preview exported as '" + complete_outpath + "'"
 
 if GENREATE_SCHEMATIC:
     schematic_outpath = IMAGE_DIRECTORY + ".schematic"
@@ -177,8 +226,7 @@ for i in range(0, im.size[0]):
 
 print "Calculated ordering (length " + str(len(COLOR_ORDER)) + ")"
 
-e_time = (DELAY_BETWEEN_ROWS) * im.size[0]
-e_time += (DELAY_BETWEEN_BLOCKS) * im.size[0] * im.size[1]
+e_time = (DELAY_BETWEEN_BLOCKS) * im.size[0] * im.size[1]
 print "Estimated time: " + str(e_time) + " seconds"
 print "Press CTRL+SHIFT+O to start placing"
 keyboard.wait('ctrl+shift+o')
@@ -200,6 +248,8 @@ if os.path.isfile(PREV_PROGRESS_PATH):
 
 print "SIZE: " + str(im.size[1])
 
+blocks_placed = 0
+
 for i in range(i_start, im.size[0]):
     k = im.size[1]
     while k > 0:
@@ -208,6 +258,7 @@ for i in range(i_start, im.size[0]):
         # Account for starting positions
         if k_start < im.size[1]:
             k = k_start
+
         # Now, we're in the right position
         # Make sure we don't skip again
         k_start = im.size[1]
@@ -233,7 +284,7 @@ for i in range(i_start, im.size[0]):
                 keyboard.press_and_release(str(slot+1))
                 time.sleep(0.05)
                 time.sleep(DELAY_BETWEEN_BLOCKS / 2.0)
-                mouse.right_click()
+                right_click()
                 time.sleep(DELAY_BETWEEN_BLOCKS / 2.0)
         else:
             # We need to figure out which block we'll use last
@@ -260,18 +311,21 @@ for i in range(i_start, im.size[0]):
             if DO_KEYPRESSES:
                 switch_to_hotbar(slot, slot_to_replace)
                 # Click the mouse
-                keyboard.press(str(slot_to_replace + 1))
+                keyboard.press_and_release(str(slot_to_replace + 1))
 
                 time.sleep(DELAY_BETWEEN_BLOCKS / 2.0)
-                mouse.right_click()
+                right_click()
                 # Wait any extra time
                 time.sleep(DELAY_BETWEEN_BLOCKS / 2.0)
 
+        blocks_placed += 1 # We just placed a block
 
-        if GENERATE_FULL_PREVIEW:
-            block_pix = Image.open('textures/' + COLORS[best_color_index][0] + '.png', 'r')
-            add_bitmap_to_coml_prev(block_pix)
-            compl_prev_index += 1
+        # Check if we need to recalibrate
+        if blocks_placed % CALIBRATE_DISTANCE == 0:
+            keyboard.press("space")
+            time.sleep(1)
+            keyboard.release("space")
+            time.sleep(5) # 5 seconds to reset is generous
 
         # Check if we should pause
         if keyboard.is_pressed('p'):
@@ -283,7 +337,7 @@ for i in range(i_start, im.size[0]):
                     break
                 if keyboard.is_pressed('ctrl+shift+x'):
                     print "Saving progress..."
-                    progress = {"i": i, "k": k}
+                    progress = {"i": i, "k": k - 1}
                     f = open(PREV_PROGRESS_PATH, 'w')
                     f.write(json.dumps(progress))
                     print "Progress saved"
